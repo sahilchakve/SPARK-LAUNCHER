@@ -1,0 +1,40 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore folder structure
+        run: |
+          for f in *__*; do
+            [ -e "$f" ] || continue
+            p="${f//__//}"
+            case "$p" in github/*) p=".$p";; esac
+            mkdir -p "$(dirname "$p")"
+            mv "$f" "$p"
+          done
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FRIDAY-Launcher-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
