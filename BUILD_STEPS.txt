@@ -1,0 +1,25 @@
+FRIDAY LAUNCHER - build and install (Realme C73 5G)
+
+A. Cloud build (no Android Studio needed)
+   1. GitHub par free account banayein, aur ek naya repository (private ho sakti hai) banayein.
+   2. Is zip ka andar ka content (app/, .github/, build.gradle.kts, settings.gradle.kts, gradle.properties)
+      repository ke root mein upload kar dijiye. "Add file > Upload files" se ho jayega.
+   3. Actions tab kholiye > "Build FRIDAY Launcher APK" > Run workflow (ya upload ke baad apne aap chalega).
+   4. Lagbhag 5 se 10 minute mein build ho jayega. Run ke andar "FRIDAY-Launcher-APK" download kijiye.
+      Usme app-debug.apk hogi.
+
+B. Phone par install
+   1. APK ko phone mein transfer kijiye (USB, Google Drive, WhatsApp self-chat).
+   2. File manager se APK kholiye. "Install unknown apps" allow kijiye, phir Install dabayein.
+   3. Play Protect warning aaye to "Install anyway" chunein (ye aapki apni banayi APK hai).
+
+C. Default home app set karna
+   1. Settings > Apps > Default apps > Home app (ya search mein "Home app") kholiye.
+   2. "FRIDAY Launcher" chunein.
+   3. Home button dabayein, FRIDAY home khul jayega. Wapas Realme launcher par jane ke liye
+      same jagah se "Realme Launcher" chunein.
+
+D. Pehli baar chalane par
+   - Permissions allow kijiye: Camera (VISION ke liye), Microphone (MIC ke liye).
+   - Internet chahiye: SUSHI, VERONICA, CAD BENCH aur AI ke liye.
+   - Voice ke liye phone mein Google Text-to-speech engine ho.
