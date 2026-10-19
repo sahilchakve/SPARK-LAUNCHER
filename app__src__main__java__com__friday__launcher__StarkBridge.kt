@@ -1,6 +1,18 @@
 package com.friday.launcher
 
+import android.Manifest
 import android.app.ActivityManager
+import android.content.ComponentName
+import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.MediaMetadata
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import androidx.core.content.ContextCompat
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -37,7 +49,12 @@ import kotlin.math.sqrt
  * Bridge between the HTML launcher and Android.
  * JS calls: Android.getApps(), Android.launch(pkg), Android.openUrl(url), Android.getDeviceInfo()
  */
-class StarkBridge(private val context: Context) {
+class StarkBridge(private val context: Context, private val host: Host) {
+
+    interface Host {
+        fun runJs(js: String)
+        fun requestMicPermission()
+    }
 
     private val pm = context.packageManager
     private val iconCache = HashMap<String, String>()
@@ -323,6 +340,142 @@ class StarkBridge(private val context: Context) {
                 .put("apps", launchable)
         )
         return root
+    }
+
+    // ---------- Continuous voice (native SpeechRecognizer, restarts itself until OFF) ----------
+    private var listening = false
+    private var recognizer: SpeechRecognizer? = null
+
+    private val recogListener = object : RecognitionListener {
+        override fun onResults(results: Bundle?) {
+            val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+            if (!text.isNullOrBlank()) {
+                host.runJs("window.onVoiceResult && onVoiceResult(${JSONObject.quote(text)})")
+            }
+            restartSoon()
+        }
+        override fun onError(error: Int) {
+            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                listening = false
+                host.runJs("window.onVoiceState && onVoiceState('denied')")
+                return
+            }
+            restartSoon()
+        }
+        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    private fun micGranted(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    @JavascriptInterface
+    fun startListening() {
+        if (!micGranted()) {
+            host.requestMicPermission()
+            return
+        }
+        listening = true
+        host.runJs("window.onVoiceState && onVoiceState('listening')")
+        mainHandler.post { startOneRecognition() }
+    }
+
+    @JavascriptInterface
+    fun stopListening() {
+        listening = false
+        mainHandler.post { recognizer?.cancel() }
+        host.runJs("window.onVoiceState && onVoiceState('off')")
+    }
+
+    private fun startOneRecognition() {
+        if (!listening) return
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            listening = false
+            host.runJs("window.onVoiceState && onVoiceState('unavailable')")
+            return
+        }
+        val sr = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also {
+            it.setRecognitionListener(recogListener)
+            recognizer = it
+        }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        sr.startListening(intent)
+    }
+
+    private fun restartSoon() {
+        if (!listening) return
+        mainHandler.postDelayed({ startOneRecognition() }, 250)
+    }
+
+    fun shutdownSpeech() {
+        listening = false
+        recognizer?.destroy()
+        recognizer = null
+    }
+
+    // ---------- Notification access and media ----------
+    @JavascriptInterface
+    fun hasNotifAccess(): Boolean {
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
+        return flat.contains(context.packageName)
+    }
+
+    @JavascriptInterface
+    fun openNotifAccess() {
+        context.startActivity(
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    @JavascriptInterface
+    fun mediaInfo(): String {
+        return try {
+            val msm = context.getSystemService(MediaSessionManager::class.java) ?: return "null"
+            val session = msm.getActiveSessions(ComponentName(context, StarkNotifService::class.java)).firstOrNull()
+                ?: return "null"
+            val md = session.metadata
+            JSONObject()
+                .put("title", md?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "")
+                .put("artist", md?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "")
+                .put("playing", session.playbackState?.state == PlaybackState.STATE_PLAYING)
+                .toString()
+        } catch (e: Exception) {
+            "null"
+        }
+    }
+
+    @JavascriptInterface
+    fun mediaControl(cmd: String) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (cmd == "volup") {
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            return
+        }
+        if (cmd == "voldown") {
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            return
+        }
+        val msm = context.getSystemService(MediaSessionManager::class.java) ?: return
+        val session = (try {
+            msm.getActiveSessions(ComponentName(context, StarkNotifService::class.java)).firstOrNull()
+        } catch (e: Exception) {
+            null
+        }) ?: return
+        val tc = session.transportControls ?: return
+        when (cmd) {
+            "play" -> tc.play()
+            "pause" -> tc.pause()
+            "next" -> tc.skipToNext()
+            "prev" -> tc.skipToPrevious()
+        }
     }
 
     private fun readText(path: String): String? = try {

@@ -17,7 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), StarkBridge.Host {
 
     private lateinit var webView: WebView
     private lateinit var loader: WebViewAssetLoader
@@ -35,6 +35,22 @@ class MainActivity : ComponentActivity() {
         pendingPermission = null
     }
 
+    private val micLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            bridge.startListening()
+        } else {
+            runJs("window.onVoiceState && onVoiceState('denied')")
+        }
+    }
+
+    override fun runJs(js: String) {
+        runOnUiThread { webView.evaluateJavascript(js, null) }
+    }
+
+    override fun requestMicPermission() {
+        runOnUiThread { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -50,8 +66,12 @@ class MainActivity : ComponentActivity() {
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
         }
-        bridge = StarkBridge(this)
+
+        bridge = StarkBridge(this, this)
         webView.addJavascriptInterface(bridge, "Android")
+
+        // Notification and call events go straight to the HUD
+        NotifBus.sink = { json -> runJs("window.onNativeEvent && onNativeEvent($json)") }
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? =
@@ -87,7 +107,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Back button: JS decides (close sheet, or go from JARVIS to home). Launcher home stays put.
+        // Back button: JS decides (close frame or sheet, or go from JARVIS to home)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 webView.evaluateJavascript("(typeof starkBack==='function')&&starkBack()", null)
@@ -97,14 +117,16 @@ class MainActivity : ComponentActivity() {
         webView.loadUrl("https://appassets.androidplatform.net/assets/friday_home.html")
     }
 
-    override fun onDestroy() {
-        bridge.shutdownTts()
-        super.onDestroy()
-    }
-
     override fun onResume() {
         super.onResume()
         // Refresh the app list in case apps were installed or removed
         webView.evaluateJavascript("if(window.refreshNative)refreshNative();", null)
+    }
+
+    override fun onDestroy() {
+        NotifBus.sink = null
+        bridge.shutdownSpeech()
+        bridge.shutdownTts()
+        super.onDestroy()
     }
 }

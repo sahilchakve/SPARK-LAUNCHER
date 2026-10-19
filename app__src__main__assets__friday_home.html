@@ -229,7 +229,6 @@
   body::after {
     content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
     background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 3px);
-    animation: flicker 6s infinite;
   }
   @keyframes flicker { 0%,100% { opacity: 0.6; } 50% { opacity: 0.35; } 52% { opacity: 0.75; } }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); filter: brightness(1.6); } to { opacity: 1; transform: none; filter: none; } }
@@ -257,7 +256,7 @@
 
   /* Page transitions: blur-in with a sweep line */
   .page { transition: opacity 0.45s ease, transform 0.55s cubic-bezier(.2,.8,.2,1), filter 0.45s; }
-  .page.hidden { opacity: 0; filter: blur(8px) brightness(1.4); transform: scale(1.04); }
+  .page.hidden { opacity: 0; transform: scale(1.02); }
   .page.enter::after {
     content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 60%;
     background: linear-gradient(90deg, transparent, rgba(41,211,255,0.18), transparent);
@@ -273,7 +272,7 @@
   }
   .ring { animation-timing-function: linear; }
   .core { animation-duration: 2.6s; }
-  .persona-tag, .greet { animation: flicker 4s infinite; }
+  
   .hud-clock { text-shadow: 0 0 10px var(--cy); }
 
   /* Chat messages */
@@ -304,7 +303,7 @@
   .app:active .ic { animation: tapPulse 0.45s ease-out; }
 
   /* Sheets: glowing top edge that scans */
-  .overlay { backdrop-filter: blur(4px); }
+  .overlay { }
   .sheet { box-shadow: 0 -12px 40px rgba(41,211,255,0.15); }
   .sheet::before {
     content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
@@ -411,6 +410,19 @@
     border-bottom: 1px solid var(--line); background: rgba(6,18,29,0.95); }
   #frame-wrap .fw-title { font-family: "Share Tech Mono", monospace; letter-spacing: 3px; color: var(--cy); text-shadow: 0 0 10px var(--cy); }
   #frame-wrap iframe { flex: 1; width: 100%; border: 0; background: #02060b; }
+  .live-card { position: fixed; top: 58px; left: 12px; right: 12px; z-index: 65; background: rgba(6,18,29,0.94);
+    border: 1px solid var(--cy); padding: 10px 14px; font-family: "Share Tech Mono", monospace; opacity: 0;
+    transform: translateY(-160%); transition: transform 0.5s cubic-bezier(.2,.8,.2,1), opacity 0.3s;
+    box-shadow: 0 0 18px rgba(41,211,255,0.35); pointer-events: auto; }
+  .live-card.show { transform: none; opacity: 1; }
+  .live-card b { color: var(--am); font-weight: normal; letter-spacing: 2px; font-size: 11px; display: block; }
+  .live-card .lc-title { font-size: 15px; color: var(--txt); margin-top: 2px; }
+  .live-card .lc-text { font-size: 12px; color: var(--mut); margin-top: 2px; }
+  .live-card.call { border-color: var(--am); animation: callPulse 1.2s ease-in-out infinite; }
+  @keyframes callPulse { 0%,100% { box-shadow: 0 0 10px rgba(255,176,32,0.35); } 50% { box-shadow: 0 0 26px rgba(255,176,32,0.8); } }
+  .np { display: none; font-family: "Share Tech Mono", monospace; font-size: 12px; color: var(--cy); max-width: 90%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np.show { display: block; }
 </style>
 </head>
 <body>
@@ -458,6 +470,7 @@
 
     <section class="hud-stage">
       <div class="persona-tag" id="persona-tag"></div>
+      <div class="np" id="np"></div>
       <div class="reactor">
         <div class="ring"></div>
         <div class="ring r2"></div>
@@ -493,6 +506,7 @@
 </div>
 
 <div id="boot"><div class="b-ring"></div><div class="b-text">F.R.I.D.A.Y. · BOOTING</div><div class="b-line"></div><div class="b-sub">SYSTEMS ONLINE</div></div>
+<div class="live-card" id="live-card"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -965,7 +979,8 @@
 
     if ((m = t.match(/^open\s+(.+)$/))) {
       const name = m[1].trim();
-      const app = APPS.find(a => a.name.toLowerCase() === name || a.id === name.replace(/\s+/g, ""));
+      const app = APPS.find(a => a.name.toLowerCase() === name) || APPS.find(a => a.name.toLowerCase().includes(name))
+        || APPS.find(a => a.id === name.replace(/\s+/g, ""));
       if (app) { launchApp(app); return `${app.name} khol raha hoon, sir.`; }
       const sid = SHEET_ALIAS[name];
       if (sid) { openSheet(sid); return `${SHEETS[sid].title} khol diya, sir.`; }
@@ -1020,7 +1035,7 @@
     return `<svg viewBox="0 0 24 24" aria-hidden="true">${STARK_PATHS[name] || STARK_PATHS.web}</svg>`;
   }
   function starkIcon(app) {
-    if (app.icon) return `<img class="tint" src="${app.icon}" alt="">`;
+    if (app.icon) return `<img class="tint" src="${app.icon}" alt="" decoding="async" loading="lazy">`;
     const map = { jarvis: "jarvis", calc: "calc", calculator: "calc", timer: "timer", clock: "timer",
                   tasks: "tasks", notes: "notes", vision: "camera", camera: "camera", settings: "more",
                   reminders: "timer", calendar: "timer", phone: "phone" };
@@ -1205,7 +1220,7 @@
     const body = $("sheet-body");
     body.innerHTML = "";
     SHEETS[SHEET].render(body);
-    if (SHEET === "more") { appendCustomize(body); appendApi(body); appendBundled(body); const tb = body.querySelector("#m-test"); if (tb) tb.addEventListener("click", testVoice); }
+    if (SHEET === "more") { appendCustomize(body); appendApi(body); appendBundled(body); appendNative(body); const tb = body.querySelector("#m-test"); if (tb) tb.addEventListener("click", testVoice); }
   }
 
   function renderNotes(body) {
@@ -1495,17 +1510,7 @@
   $("cmd-form").addEventListener("submit", e => { e.preventDefault(); const i = $("cmd"); submit(i.value); i.value = ""; });
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  $("mic").addEventListener("click", () => {
-    if (!SR) return toast("Voice input is browser mein nahi hai. Chrome try karein.");
-    const rec = new SR();
-    rec.lang = "en-IN";
-    rec.interimResults = false;
-    $("mic").classList.add("live");
-    rec.onresult = e => submit(e.results[0][0].transcript);
-    rec.onerror = () => toast("Mic error, dobara try karein");
-    rec.onend = () => $("mic").classList.remove("live");
-    rec.start();
-  });
+  $("mic").addEventListener("click", toggleMic);
 
   $("tab-all").addEventListener("click", () => { homeTab = "all"; $("tab-all").classList.add("on"); $("tab-cat").classList.remove("on"); renderHomeGrid(); });
   $("tab-cat").addEventListener("click", () => { homeTab = "cat"; $("tab-cat").classList.add("on"); $("tab-all").classList.remove("on"); renderHomeGrid(); });
@@ -1920,6 +1925,125 @@
     body.appendChild(sec);
   }
 
+
+  // ==================== CONTINUOUS VOICE, NOTIFICATIONS, MEDIA ====================
+  let micOn = false;
+  let browserRec = null;
+  function setMicUI(on) { $("mic").classList.toggle("live", on); }
+  function toggleMic() { if (micOn) stopMic(); else startMic(); }
+  function startMic() {
+    micOn = true;
+    setMicUI(true);
+    if (window.Android && Android.startListening) { Android.startListening(); return; }
+    const SRx = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SRx) { toast("Voice is browser mein nahi hai"); micOn = false; setMicUI(false); return; }
+    browserRec = new SRx();
+    browserRec.lang = "en-IN";
+    browserRec.continuous = true;
+    browserRec.interimResults = false;
+    browserRec.onresult = e => {
+      const r = e.results[e.results.length - 1];
+      if (r.isFinal) onVoiceResult(r[0].transcript);
+    };
+    browserRec.onend = () => { if (micOn && browserRec) { try { browserRec.start(); } catch (err) {} } };
+    try { browserRec.start(); } catch (err) {}
+  }
+  function stopMic() {
+    micOn = false;
+    setMicUI(false);
+    if (window.Android && Android.stopListening) Android.stopListening();
+    if (browserRec) { const r = browserRec; browserRec = null; r.onend = null; try { r.stop(); } catch (err) {} }
+  }
+  window.onVoiceState = s => {
+    if (s === "denied") { toast("Mic permission nahi mili, sir"); micOn = false; setMicUI(false); }
+    if (s === "unavailable") { toast("Voice service is phone par nahi hai"); micOn = false; setMicUI(false); }
+  };
+  function openKeyboard(prefill) {
+    showPage("hud");
+    const i = $("cmd");
+    i.value = prefill || "";
+    i.focus();
+  }
+  function mediaCmd(c) {
+    if (window.Android && Android.mediaControl) { Android.mediaControl(c); toast(`Media: ${c}`); }
+    else toast("Media control sirf APK mein chalta hai");
+  }
+  function onVoiceResult(text) {
+    const t = (text || "").trim();
+    if (!t) return;
+    if (/^(keyboard|type)$/i.test(t)) return openKeyboard("");
+    let m = t.match(/^type\s+(.+)$/i);
+    if (m) return openKeyboard(m[1]);
+    if (/^send$/i.test(t)) { const v = $("cmd").value; $("cmd").value = ""; return submit(v); }
+    if (/^(play|resume)$/i.test(t)) return mediaCmd("play");
+    if (/^(pause|stop music)$/i.test(t)) return mediaCmd("pause");
+    if (/^(next|skip)( song| track)?$/i.test(t)) return mediaCmd("next");
+    if (/^(previous|back)( song| track)?$/i.test(t)) return mediaCmd("prev");
+    if (/^volume up$/i.test(t)) return mediaCmd("volup");
+    if (/^volume down$/i.test(t)) return mediaCmd("voldown");
+    m = t.match(/^tap\s+(.+)$/i);
+    submit(m ? "open " + m[1] : t);
+  }
+  window.onVoiceResult = onVoiceResult;
+
+  function escHtml(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  let liveTimer = null;
+  function showLive(kind, label, title, text) {
+    const c = $("live-card");
+    c.className = "live-card show " + kind;
+    c.innerHTML = `<b>${escHtml(label)}</b><div class="lc-title">${escHtml(title)}</div><div class="lc-text">${escHtml(text)}</div>`;
+    c.onclick = () => c.classList.remove("show");
+    clearTimeout(liveTimer);
+    if (kind !== "call") liveTimer = setTimeout(() => c.classList.remove("show"), 5000);
+  }
+  window.onNativeEvent = ev => {
+    if (!ev || !ev.type) return;
+    if (ev.type === "call") {
+      showLive("call", "INCOMING CALL", ev.title || "Unknown", ev.app || "");
+      speak(`Sir, call aa rahi hai, ${ev.title || "unknown"}.`);
+    } else if (ev.type === "callEnd") {
+      const c = $("live-card");
+      if (c.classList.contains("call")) c.classList.remove("show");
+    } else if (ev.type === "notif") {
+      showLive("notif", String(ev.app || "NOTIFICATION").toUpperCase(), ev.title || "", ev.text || "");
+      D.notifs.unshift({ title: ev.title || ev.app || "Notification", body: ev.text || "", target: "notifs", t: Date.now() });
+      D.notifs = D.notifs.slice(0, 30);
+      save();
+      paintBadges();
+    }
+  };
+
+  function pollMedia() {
+    const el = $("np");
+    if (!el || !(window.Android && Android.mediaInfo)) return;
+    let m = null;
+    try { m = JSON.parse(Android.mediaInfo()); } catch (e) {}
+    if (m && m.title) {
+      el.textContent = (m.playing ? "▶ " : "❚❚ ") + m.title + (m.artist ? " · " + m.artist : "");
+      el.classList.add("show");
+    } else {
+      el.textContent = "";
+      el.classList.remove("show");
+    }
+  }
+
+  function appendNative(body) {
+    const sec = document.createElement("div");
+    sec.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    const access = !!(window.Android && Android.hasNotifAccess && Android.hasNotifAccess());
+    sec.innerHTML = `
+      <div class="small">VOICE, NOTIFICATIONS, MEDIA</div>
+      <div class="kv"><span>Notification access</span><b>${window.Android ? (access ? "ON" : "OFF") : "APK only"}</b></div>
+      <div class="row center">
+        <button class="btn" id="n-access">NOTIFICATION ACCESS</button>
+        <button class="btn amber" id="n-mic">${micOn ? "MIC OFF" : "MIC ON"}</button>
+      </div>
+      <div class="small">Notification access on karne par calls aur notifications HUD mein aayenge aur music control hoga. MIC ON karne par wo tab tak sunta rahega jab tak aap OFF na karein.</div>`;
+    sec.querySelector("#n-access").addEventListener("click", () => { if (window.Android && Android.openNotifAccess) Android.openNotifAccess(); });
+    sec.querySelector("#n-mic").addEventListener("click", () => { toggleMic(); renderSheet(); });
+    body.appendChild(sec);
+  }
+
   // ==================== INIT ====================
   const nat = nativeApps();
   if (nat) APPS = nat;
@@ -1934,6 +2058,7 @@
   tick();
   setInterval(tick, 1000);
   setTimeout(() => $("boot").classList.add("done"), 1800);
+  setInterval(pollMedia, 4000);
   if (!D.chat.length) say(P().greet(greetWord()));
 </script>
 <script>
