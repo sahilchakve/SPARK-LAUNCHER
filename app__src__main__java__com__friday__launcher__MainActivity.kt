@@ -44,6 +44,14 @@ class MainActivity : ComponentActivity(), StarkBridge.Host {
         }
     }
 
+    private val singlePermLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        runJs("window.onPermResult && onPermResult($granted)")
+    }
+
+    override fun requestPerm(perm: String) {
+        runOnUiThread { singlePermLauncher.launch(perm) }
+    }
+
     override fun runJs(js: String) {
         runOnUiThread { webView.evaluateJavascript(js, null) }
     }

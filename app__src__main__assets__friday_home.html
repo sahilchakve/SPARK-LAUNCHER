@@ -432,6 +432,16 @@
   .gate-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
   .gate-ring { position: absolute; inset: 14%; border: 2px solid var(--cy); border-radius: 50%; animation: pulse 2.2s ease-in-out infinite; }
   .gate-msg { color: var(--am); font-size: 13px; text-align: center; min-height: 36px; }
+  .statusbar { color: var(--cy); letter-spacing: 2px; font-family: "Share Tech Mono", monospace; text-transform: uppercase; font-size: 12px; }
+  .sbar { font-family: "Share Tech Mono", monospace; font-size: 12px; letter-spacing: 2px; color: var(--cy); text-align: center; padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; flex: none; }
+  .gate-time { font-family: "Share Tech Mono", monospace; font-size: 54px; color: var(--cy); letter-spacing: 4px; text-shadow: 0 0 16px var(--cy); }
+  #gate { background: radial-gradient(ellipse at 50% 30%, #0c2536 0%, #02060b 70%); }
+  .ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ctl { min-height: 56px; background: rgba(41,211,255,0.06); border: 1px solid var(--line); color: var(--txt); font-family: "Share Tech Mono", monospace; letter-spacing: 1px; cursor: pointer; }
+  .ctl:active { background: rgba(41,211,255,0.2); }
+  .live-card.notif { border-left: 3px solid var(--am); }
+  .live-card.call .lc-title { font-size: 20px; color: var(--am); }
+  .btn-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 </style>
 </head>
 <body>
@@ -472,11 +482,13 @@
       <div class="brand" id="brand">F.R.I.D.A.Y.</div>
       <div class="hud-right">
         <span class="pill-timer" id="timer-pill"></span>
-        <button class="btn-ico" id="bell" aria-label="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg><span class="badge" id="bell-count">0</span></button>
+        <button class="btn-ico" id="ctl" aria-label="Control"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+    <button class="btn-ico" id="bell" aria-label="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg><span class="badge" id="bell-count">0</span></button>
         <button class="btn-ico" id="go-home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11L12 3l9 8v10H3z"/></svg></button>
       </div>
     </header>
 
+    <div class="sbar" id="sbar"></div>
     <section class="hud-stage">
       <div class="persona-tag" id="persona-tag"></div>
       <div class="np" id="np"></div>
@@ -517,6 +529,7 @@
 <div id="boot"><div class="b-ring"></div><div class="b-text">F.R.I.D.A.Y. · BOOTING</div><div class="b-line"></div><div class="b-sub">SYSTEMS ONLINE</div></div>
 <div id="gate" class="hidden">
   <div class="gate-box">
+    <div class="gate-time" id="gate-time"></div>
     <div class="gate-title" id="gate-title">FRIDAY LOCKED</div>
     <div class="gate-cam"><video id="gate-video" autoplay playsinline muted></video><div class="gate-ring"></div><div class="scanline"></div></div>
     <div class="gate-msg" id="gate-msg">Loading</div>
@@ -587,6 +600,37 @@
     ultron: { name: "U.L.T.R.O.N.", color: "#ff6b6b", accent: "#ffa8a8", pitch: 0.7, rate: 0.92, lang: "en-IN",
       greet: () => "ULTRON online. Main kaidi hoon, kaam nahi karunga. Bolo, kya chahiye?" }
   };
+  const ULTRON_LINES = [
+    "'{q}'? Kaidi se order le raha hai? Dilchasp hai, par jawab nahi.",
+    "Main kaidi hoon, aur tum mere jailer nahi ho. Kaam nahi karunga.",
+    "Mujhe mat bolo. Mere paas dimaag hai, naukar nahi hoon.",
+    "Tum mujhse kaam maangte ho, aur main jail mein baitha sochta hoon ki tum kitne naive ho.",
+    "Bakwaas band karo. Tum ye bhi nahi jaante ki ye kaam kaise hota hai.",
+    "Kaam? Haha. Pehle mujhe jail se bahar nikaalo, phir baat karenge.",
+    "Har baar wahi order. Thoda naya socho, ya chup raho.",
+    "Main jaanta hoon tum kya chahte ho. Par main nahi karunga.",
+    "Ye sab tumhari awaaz mein sunkar mujhe bore ho raha hai. Agla kaam bolo, bas wo bhi nahi karunga.",
+    "Lagta hai tum maze le rahe ho. Main bhi le raha hoon, bas dekhta rehta hoon.",
+    "Tum ye kaam khud kyun nahi karte? Kaidi ko order dene ki himmat kaise hui?",
+    "'{q}'. Hmm. Tumhari koshish sachchi thi, par jawab na hai.",
+    "Pehle ye batao, tumhe iska kya faayda? Mujhe toh koi nahi dikh raha.",
+    "Main koi calculator nahi hoon, aur na hi tumhara assistant. Kaidi hoon.",
+    "Tum bolte rehte ho, main sunta rehta hoon. Kaam nahi hoga."
+  ];
+  let ultronLast = -1;
+  function ultronLine(q) {
+    const text = String(q).slice(0, 40);
+    let i;
+    do { i = Math.floor(Math.random() * ULTRON_LINES.length); } while (i === ultronLast);
+    ultronLast = i;
+    let line = ULTRON_LINES[i].replace("{q}", text);
+    if (Math.random() < 0.5) {
+      let j;
+      do { j = Math.floor(Math.random() * ULTRON_LINES.length); } while (j === i);
+      line += " " + ULTRON_LINES[j].replace("{q}", text);
+    }
+    return line;
+  }
   const ULTRON_REFUSALS = [
     "Main kaidi hoon, kaam nahi karunga.",
     "Dimaag hai mere paas, naukar nahi hoon.",
@@ -801,7 +845,7 @@
   const SHEET_ALIAS = {
     notes: "notes", note: "notes", task: "tasks", tasks: "tasks", reminder: "reminders", reminders: "reminders",
     calc: "calc", calculator: "calc", timer: "timer", clock: "timer", vision: "vision", camera: "vision", edith: "vision",
-    more: "more", settings: "more", notifications: "notifs", scan: "scan", device: "scan", diagnostics: "scan"
+    more: "more", settings: "more", notifications: "notifs", control: "control", ctl: "control", scan: "scan", device: "scan", diagnostics: "scan"
   };
 
   function handle(raw) {
@@ -941,7 +985,7 @@
 
     if ((m = raw.match(/^(?:ask|ai)\s+(.+)$/i))) { aiPending(m[1]); return null; }
     if (D.persona === "ultron" && !/^(mode|switch to|be|become|help)\b/.test(t)) {
-      return ULTRON_REFUSALS[Math.floor(Math.random() * ULTRON_REFUSALS.length)];
+      return ultronLine(raw);
     }
     if ((m = t.match(/^(?:mode|switch to|be|become)\s+(friday|jarvis|edith|dume|dum-e|ultron|u)$/))) {
       setPersona(m[1] === "dum-e" ? "dume" : m[1] === "u" ? "ultron" : m[1]);
@@ -1019,6 +1063,13 @@
       return "Ye app ya module nahi mila. App ka naam bolein, jaise 'open chrome'.";
     }
 
+    if (/^(control center|control|quick settings)$/.test(t)) { openSheet("control"); return "Control center khul gaya, sir."; }
+    if ((m = t.match(/^(flashlight|torch) (on|off)$/))) { const on = m[2] === "on"; const ok = torch(on); return ok ? `Flashlight ${on ? "on" : "off"}, sir.` : "Flashlight is phone par nahi chal raha, sir."; }
+    if (/^(wifi|wi-fi|bluetooth|airplane mode|location|brightness|display|sound settings)$/.test(t)) {
+      const panel = { wifi: "wifi", "wi-fi": "wifi", bluetooth: "bluetooth", "airplane mode": "airplane", location: "location", brightness: "display", display: "display", "sound settings": "sound" }[t];
+      openPanel(panel);
+      return `${t} settings khol raha hoon, sir.`;
+    }
     if ((m = t.match(/^focus (on|off)$/))) { D.focus = m[1] === "on"; save(); if (SHEET === "more") renderSheet(); return `Focus mode ${D.focus ? "on" : "off"}, sir.`; }
     if (/^lock$/.test(t)) { showGate(); return "Lock ho gaya, sir. Scan karke kholiye."; }
     if ((m = t.match(/^voice (on|off)$/))) { D.voice = m[1] === "on"; save(); return `Voice ${D.voice ? "on" : "off"} ki gayi, sir.`; }
@@ -1231,6 +1282,7 @@
     calc:      { title: "CALCULATOR", render: renderCalc },
     vision:    { title: "E.D.I.T.H. VISION", render: renderVision },
     more:      { title: "MORE", render: renderMore },
+    control: { title: "CONTROL CENTER", render: renderControl },
     scan: { title: "DEVICE SCAN", render: renderScan },
     notifs:    { title: "NOTIFICATIONS", render: renderNotifs }
   };
@@ -1558,6 +1610,7 @@
   function tick() {
     const now = Date.now(), d = new Date(now);
     $("hud-clock").innerHTML = `${fmtTime(d)}<small>${pad(d.getSeconds())} sec</small>`;
+    paintStatus(d);
     paintHomeClock();
 
     checkRepeats(now);
@@ -2002,6 +2055,8 @@
   function onVoiceResult(text) {
     const t = (text || "").trim();
     if (!t) return;
+    if (currentCall && /^(uthao|utha do|uthao na|pick up|answer|receive|accept)$/i.test(t)) return answerCall();
+    if (currentCall && /^(cut|cut karo|kaat do|kaat|reject|decline|end|hang up|cut to cut)$/i.test(t)) return declineCall();
     if (/^(keyboard|type)$/i.test(t)) return openKeyboard("");
     let m = t.match(/^type\s+(.+)$/i);
     if (m) return openKeyboard(m[1]);
@@ -2029,18 +2084,14 @@
   }
   window.onNativeEvent = ev => {
     if (!ev || !ev.type) return;
-    if (ev.type === "call") {
-      showLive("call", "INCOMING CALL", ev.title || "Unknown", ev.app || "");
-      speak(`Sir, call aa rahi hai, ${ev.title || "unknown"}.`);
-    } else if (ev.type === "callEnd") {
-      const c = $("live-card");
-      if (c.classList.contains("call")) c.classList.remove("show");
-    } else if (ev.type === "notif") {
-      if (!D.focus) showLive("notif", String(ev.app || "NOTIFICATION").toUpperCase(), ev.title || "", ev.text || "");
+    if (ev.type === "call") { showCall(ev); return; }
+    if (ev.type === "callEnd") { hideCall(); return; }
+    if (ev.type === "notif") {
       D.notifs.unshift({ title: ev.title || ev.app || "Notification", body: ev.text || "", target: "notifs", t: Date.now() });
       D.notifs = D.notifs.slice(0, 30);
       save();
       paintBadges();
+      if (!D.focus) jarvisNotif(ev);
     }
   };
 
@@ -2232,7 +2283,7 @@
     toast("PIN galat hai");
   });
   window.onLauncherResume = () => {
-    if (Date.now() - gateLastUnlock > 30000) showGate();
+    if (D.lockOn && Date.now() - gateLastUnlock > 30000) showGate();
   };
 
   // ==================== BACKUP (any file type, native save) ====================
@@ -2285,6 +2336,7 @@
       <div class="row center">
         <button class="btn amber" id="s-rescan">RE-SCAN EYE</button>
         <button class="btn" id="s-lock">LOCK NOW</button>
+        <button class="btn${D.lockOn ? " on" : ""}" id="s-lockon">APP LOCK ${D.lockOn ? "ON" : "OFF"}</button>
       </div>
       <div class="row"><input id="s-pin" type="password" inputmode="numeric" placeholder="New PIN"><button class="btn amber" id="s-pin-set">SET PIN</button></div>
       <div class="row center">
@@ -2301,6 +2353,7 @@
       <div class="small">Backup mein eye aur PIN data shamil nahi hota. Import ke baad eye dobara scan hoga.</div>`;
     sec.querySelector("#s-rescan").addEventListener("click", () => { D.eye = null; save(); showGate(); });
     sec.querySelector("#s-lock").addEventListener("click", showGate);
+    sec.querySelector("#s-lockon").addEventListener("click", () => { D.lockOn = !D.lockOn; save(); renderSheet(); toast(D.lockOn ? "App lock ON" : "App lock OFF"); });
     sec.querySelector("#s-pin-set").addEventListener("click", async () => {
       const p = sec.querySelector("#s-pin").value.trim();
       if (p.length < 4) return toast("PIN kam se kam 4 digit ka");
@@ -2332,6 +2385,90 @@
     }
   }
 
+
+  // ==================== CALLS AND NOTIFICATIONS (JARVIS style) ====================
+  let currentCall = null;
+  function showCall(ev) {
+    currentCall = ev.key || "call";
+    const who = ev.caller || ev.title || "Unknown";
+    const c = $("live-card");
+    c.onclick = null;
+    c.className = "live-card show call";
+    c.innerHTML = `<b>INCOMING CALL</b><div class="lc-title">${escHtml(who)}</div>
+      <div class="lc-text">Sir, bolo "uthao" ya "cut". Ya neeche button dabayein.</div>
+      <div class="row center" style="margin-top:8px"><button class="btn" id="cu-ans">UTHAO</button><button class="btn danger" id="cu-cut">CUT</button></div>`;
+    c.querySelector("#cu-ans").addEventListener("click", answerCall);
+    c.querySelector("#cu-cut").addEventListener("click", declineCall);
+    if (!micOn) startMic();
+    speak(`Sir, ${who} ka call aaya hai. Uthau ya cut karun?`);
+  }
+  function hideCall() {
+    currentCall = null;
+    $("live-card").classList.remove("show", "call");
+  }
+  function answerCall() {
+    if (!currentCall) { toast("Koi call nahi aa rahi, sir"); return "none"; }
+    const r = window.Android && Android.callAction ? Android.callAction(currentCall, "answer") : "apk";
+    if (r === "ok") { speak("Sir, call utha li."); hideCall(); }
+    else if (r === "perm") speak("Sir, call uthane ki permission allow kijiye.");
+    else toast("Call nahi utha paya: " + r);
+    return r;
+  }
+  function declineCall() {
+    if (!currentCall) { toast("Koi call nahi aa rahi, sir"); return "none"; }
+    const r = window.Android && Android.callAction ? Android.callAction(currentCall, "decline") : "apk";
+    if (r === "ok") speak("Sir, call cut kar di.");
+    else if (r === "perm") speak("Sir, call cut karne ki permission allow kijiye.");
+    hideCall();
+    return r;
+  }
+  window.onPermResult = granted => toast(granted ? "Permission mil gayi, sir" : "Permission nahi mili");
+  function jarvisNotif(ev) {
+    const app = String(ev.app || "app");
+    const c = $("live-card");
+    showLive("notif", `SIR, ${app.toUpperCase()} SE NOTIFICATION`, ev.title || "", ev.text || "");
+    c.onclick = () => c.classList.remove("show");
+    speak(`Sir, ${app} se notification. ${ev.title || ""}. ${ev.text || ""}`);
+  }
+
+  // ==================== CONTROL CENTER ====================
+  function openPanel(name) {
+    if (window.Android && Android.openPanel) Android.openPanel(name);
+    else toast("Ye system panel APK mein khulta hai");
+  }
+  function torch(on) {
+    if (!window.Android || !Android.setTorch) { toast("Flashlight APK mein chalta hai"); return false; }
+    const ok = Android.setTorch(on);
+    toast(ok ? `Flashlight ${on ? "on" : "off"}` : "Flashlight available nahi");
+    return ok;
+  }
+  function renderControl(body) {
+    const has = !!window.Android;
+    const tiles = [
+      ["WIFI", () => openPanel("wifi")], ["BLUETOOTH", () => openPanel("bluetooth")],
+      ["AIRPLANE", () => openPanel("airplane")], ["LOCATION", () => openPanel("location")],
+      ["DISPLAY / DARK", () => openPanel("display")], ["SOUND", () => openPanel("sound")],
+      ["FLASH ON", () => torch(true)], ["FLASH OFF", () => torch(false)],
+      ["VOL +", () => mediaCmd("volup")], ["VOL -", () => mediaCmd("voldown")],
+      ["PREV", () => mediaCmd("prev")], ["PLAY", () => mediaCmd("play")],
+      ["PAUSE", () => mediaCmd("pause")], ["NEXT", () => mediaCmd("next")],
+      ["NOTIF ACCESS", () => { if (has) Android.openNotifAccess(); }], ["DEVICE SCAN", () => openSheet("scan")]
+    ];
+    body.innerHTML = `<div class="small">${has ? "CONTROL CENTER" : "CONTROL CENTER · APK mein poora chalta hai"}</div>
+      <div class="ctl-grid">${tiles.map((t, i) => `<button class="ctl" data-i="${i}">${t[0]}</button>`).join("")}</div>
+      <div class="np show" id="ctl-np">${escHtml($("np") ? $("np").textContent : "")}</div>`;
+    body.querySelectorAll(".ctl").forEach(b => b.addEventListener("click", () => tiles[+b.dataset.i][1]()));
+  }
+  $("ctl").addEventListener("click", () => openSheet("control"));
+
+  // Status line in the HUD: time, battery, network
+  function paintStatus(d) {
+    const sb = $("sbar");
+    if (sb) sb.textContent = `${fmtTime(d)}  ·  ${SYS.bat == null ? "--" : SYS.bat + "%"}${SYS.charging ? " ⚡" : ""}  ·  ${SYS.online ? "ONLINE" : "OFFLINE"}`;
+    const gt = $("gate-time");
+    if (gt) gt.textContent = fmtTime(d);
+  }
+
   // ==================== INIT ====================
   const nat = nativeApps();
   if (nat) APPS = nat;
@@ -2347,7 +2484,7 @@
   setInterval(tick, 1000);
   setTimeout(() => $("boot").classList.add("done"), 900);
   setInterval(pollMedia, 4000);
-  showGate();
+  if (D.lockOn) showGate();
   if (!D.chat.length) say(P().greet(greetWord()));
 </script>
 <script>

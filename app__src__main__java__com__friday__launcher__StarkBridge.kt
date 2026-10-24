@@ -1,6 +1,9 @@
 package com.friday.launcher
 
 import android.Manifest
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.telecom.TelecomManager
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.app.ActivityManager
@@ -56,6 +59,7 @@ class StarkBridge(private val context: Context, private val host: Host) {
     interface Host {
         fun runJs(js: String)
         fun requestMicPermission()
+        fun requestPerm(perm: String)
     }
 
     private val pm = context.packageManager
@@ -525,6 +529,65 @@ class StarkBridge(private val context: Context, private val host: Host) {
         } catch (e: Exception) {
             "error: " + e.message
         }
+    }
+
+    // ---------- Calls (answer and cut by voice), torch, system panels ----------
+    @JavascriptInterface
+    fun callAction(key: String, kind: String): String {
+        val acts = NotifBus.actions[key]
+        val words = if (kind == "answer") listOf("answer", "accept", "pick", "receive") else listOf("decline", "reject", "hang", "end")
+        val act = acts?.firstOrNull { a -> words.any { w -> a.title?.toString()?.lowercase()?.contains(w) == true } }
+        if (act != null) {
+            return try {
+                act.actionIntent.send()
+                "ok"
+            } catch (e: Exception) {
+                "error"
+            }
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
+            val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            return try {
+                if (kind == "answer") {
+                    tm.acceptRingingCall()
+                } else if (Build.VERSION.SDK_INT >= 28) {
+                    tm.endCall()
+                }
+                "ok"
+            } catch (e: Exception) {
+                "error"
+            }
+        }
+        host.requestPerm(Manifest.permission.ANSWER_PHONE_CALLS)
+        return "perm"
+    }
+
+    @JavascriptInterface
+    fun setTorch(on: Boolean): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val id = cm.cameraIdList.firstOrNull { cid ->
+                cm.getCameraCharacteristics(cid).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return false
+            cm.setTorchMode(id, on)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun openPanel(name: String) {
+        val action = when (name) {
+            "wifi" -> Settings.ACTION_WIFI_SETTINGS
+            "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
+            "airplane" -> Settings.ACTION_AIRPLANE_MODE_SETTINGS
+            "display" -> Settings.ACTION_DISPLAY_SETTINGS
+            "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
+            "sound" -> Settings.ACTION_SOUND_SETTINGS
+            else -> Settings.ACTION_SETTINGS
+        }
+        context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun readText(path: String): String? = try {

@@ -8,6 +8,7 @@
     <!-- JARVIS voice input aur EDITH camera vision ke liye -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- Network type and speed for device scan -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
