@@ -1,6 +1,8 @@
 package com.friday.launcher
 
 import android.Manifest
+import android.content.ContentValues
+import android.provider.MediaStore
 import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.pm.PackageManager
@@ -475,6 +477,53 @@ class StarkBridge(private val context: Context, private val host: Host) {
             "pause" -> tc.pause()
             "next" -> tc.skipToNext()
             "prev" -> tc.skipToPrevious()
+        }
+    }
+
+    // ---------- Persona voices (language aware) and native file save ----------
+    @JavascriptInterface
+    fun speakLang(text: String, pitch: Double, rate: Double, lang: String) {
+        mainHandler.post {
+            ensureTts()
+            if (ttsReady) {
+                applyLanguage(lang)
+                doSpeak(text, pitch, rate)
+            } else {
+                pending = Triple(text, pitch, rate)
+            }
+        }
+    }
+
+    private fun applyLanguage(lang: String) {
+        val r = tts?.setLanguage(Locale.forLanguageTag(lang))
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            tts?.setLanguage(Locale("en", "IN"))
+        }
+    }
+
+    @JavascriptInterface
+    fun saveFile(name: String, mime: String, base64: String): String {
+        return try {
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return "error: cannot create file"
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                val done = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                context.contentResolver.update(uri, done, null, null)
+                "saved to Downloads: " + name
+            } else {
+                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return "error: no folder"
+                File(dir, name).writeBytes(bytes)
+                "saved: " + dir.path + "/" + name
+            }
+        } catch (e: Exception) {
+            "error: " + e.message
         }
     }
 

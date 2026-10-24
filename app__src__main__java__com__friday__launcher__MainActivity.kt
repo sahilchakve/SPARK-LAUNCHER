@@ -1,6 +1,7 @@
 package com.friday.launcher
 
 import android.Manifest
+import android.graphics.Color
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity(), StarkBridge.Host {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.webview)
+        webView.setBackgroundColor(Color.parseColor("#050608"))
 
         // Serves files from assets over https so localStorage, camera and mic work
         loader = WebViewAssetLoader.Builder()
@@ -120,7 +122,7 @@ class MainActivity : ComponentActivity(), StarkBridge.Host {
     override fun onResume() {
         super.onResume()
         // Refresh the app list in case apps were installed or removed
-        webView.evaluateJavascript("if(window.refreshNative)refreshNative();", null)
+        webView.evaluateJavascript("if(window.refreshNative)refreshNative(); if(window.onLauncherResume)onLauncherResume();", null)
     }
 
     override fun onDestroy() {

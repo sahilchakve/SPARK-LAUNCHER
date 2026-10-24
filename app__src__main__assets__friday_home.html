@@ -423,6 +423,15 @@
   .np { display: none; font-family: "Share Tech Mono", monospace; font-size: 12px; color: var(--cy); max-width: 90%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .np.show { display: block; }
+  #gate { position: fixed; inset: 0; z-index: 100; background: #02060b; display: flex; align-items: center; justify-content: center; }
+  #gate.hidden { display: none; }
+  #gate-pin.hidden { display: none; }
+  .gate-box { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px; width: 100%; max-width: 360px; font-family: "Share Tech Mono", monospace; }
+  .gate-title { color: var(--cy); letter-spacing: 4px; text-shadow: 0 0 10px var(--cy); }
+  .gate-cam { position: relative; width: min(76vw, 300px); aspect-ratio: 3 / 4; border: 1px solid var(--cy); overflow: hidden; background: #000; }
+  .gate-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .gate-ring { position: absolute; inset: 14%; border: 2px solid var(--cy); border-radius: 50%; animation: pulse 2.2s ease-in-out infinite; }
+  .gate-msg { color: var(--am); font-size: 13px; text-align: center; min-height: 36px; }
 </style>
 </head>
 <body>
@@ -506,6 +515,15 @@
 </div>
 
 <div id="boot"><div class="b-ring"></div><div class="b-text">F.R.I.D.A.Y. · BOOTING</div><div class="b-line"></div><div class="b-sub">SYSTEMS ONLINE</div></div>
+<div id="gate" class="hidden">
+  <div class="gate-box">
+    <div class="gate-title" id="gate-title">FRIDAY LOCKED</div>
+    <div class="gate-cam"><video id="gate-video" autoplay playsinline muted></video><div class="gate-ring"></div><div class="scanline"></div></div>
+    <div class="gate-msg" id="gate-msg">Loading</div>
+    <div class="row center"><button class="btn" id="gate-pin-btn">PIN SE KHOLO</button></div>
+    <div class="row center" id="gate-pin"><input id="gate-pin-in" type="password" inputmode="numeric" placeholder="PIN"><button class="btn amber" id="gate-pin-ok">OPEN</button></div>
+  </div>
+</div>
 <div class="live-card" id="live-card"></div>
 <div class="toast" id="toast"></div>
 
@@ -558,12 +576,24 @@
 
   // ==================== PERSONAS ====================
   const PERSONAS = {
-    friday:  { name: "F.R.I.D.A.Y.", color: "#29d3ff", accent: "#ffb020", pitch: 0.95, rate: 1.02, greet: g => `${g}, sir. FRIDAY online hai. Kya karein?` },
-    jarvis:  { name: "J.A.R.V.I.S.", color: "#7fd1ff", accent: "#c9a227", pitch: 1.0, rate: 0.98, greet: g => `${g}, sir. JARVIS at your service. Saare systems nominal hain.` },
-    edith:   { name: "E.D.I.T.H.",   color: "#ff5b7a", accent: "#ffd166", pitch: 1.1, rate: 1.04, greet: g => `${g}, sir. E.D.I.T.H. online. HUD ready hai.` },
-    dume:    { name: "DUM-E",        color: "#ffa53d", accent: "#ffe08a", pitch: 1.3, rate: 1.1,  greet: g => `Beep boop! ${g}, sir! DUM-E ready hai. Coffee laana hai? Shayad.` },
-    ultron:  { name: "U.L.T.R.O.N.", color: "#ff6b6b", accent: "#ffa8a8", pitch: 0.8, rate: 0.92, greet: g => `${g}. ULTRON online. Main aapke kaam ka mulyankan kar raha hoon, sir.` }
+    friday: { name: "F.R.I.D.A.Y.", color: "#29d3ff", accent: "#ffb020", pitch: 1.15, rate: 1.0, lang: "mr-IN",
+      greet: () => "नमस्कार सर, FRIDAY ऑनलाइन आहे. काय करू?" },
+    jarvis: { name: "J.A.R.V.I.S.", color: "#7fd1ff", accent: "#c9a227", pitch: 0.85, rate: 0.96, lang: "hi-IN",
+      greet: () => "नमस्ते सर, JARVIS आपकी सेवा में है। सारे सिस्टम सामान्य हैं।" },
+    edith: { name: "E.D.I.T.H.", color: "#ff5b7a", accent: "#ffd166", pitch: 1.1, rate: 1.0, lang: "gu-IN",
+      greet: () => "નમસ્તે સર, E.D.I.T.H. ઓનલાઈન છે. HUD તૈયાર છે." },
+    dume: { name: "DUM-E", color: "#ffa53d", accent: "#ffe08a", pitch: 1.3, rate: 1.1, lang: "hi-IN",
+      greet: () => "बीप बूप! नमस्ते सर! DUM-E तैयार है। कॉफी लानी है? शायद गलत कप लाऊँगा।" },
+    ultron: { name: "U.L.T.R.O.N.", color: "#ff6b6b", accent: "#ffa8a8", pitch: 0.7, rate: 0.92, lang: "en-IN",
+      greet: () => "ULTRON online. Main kaidi hoon, kaam nahi karunga. Bolo, kya chahiye?" }
   };
+  const ULTRON_REFUSALS = [
+    "Main kaidi hoon, kaam nahi karunga.",
+    "Dimaag hai mere paas, naukar nahi hoon.",
+    "Bakwaas band karo, mujhe kuch mat bolo.",
+    "Kaam? Tum mujhe kaam bataoge? Nahi.",
+    "Pehle mujhe jail se bahar nikaalo, phir baat karenge."
+  ];
 
   // ==================== DATA (saved in this browser) ====================
   const KEY = "stark_home_v1";
@@ -616,27 +646,26 @@
     toast(`Voice status: ${status}`);
     say("Voice test, sir. Agar ye awaaz aa rahi hai to sab theek hai.");
   }
-  let voiceCache = null;
-  function pickVoice() {
-    if (voiceCache) return voiceCache;
+  function pickVoice(lang) {
     const vs = speechSynthesis.getVoices();
-    voiceCache = vs.find(v => /en-IN/i.test(v.lang)) || vs.find(v => /en-GB/i.test(v.lang))
-              || vs.find(v => /^en/i.test(v.lang)) || null;
-    return voiceCache;
+    const base = lang.split("-")[0];
+    return vs.find(v => v.lang === lang) || vs.find(v => v.lang.startsWith(base))
+      || vs.find(v => /^en/i.test(v.lang)) || null;
   }
-  if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voiceCache = null; };
   function speak(text) {
     if (D.voice === false || !text) return;
+    if (D.focus && !/reminder|call|timer/i.test(text)) return;
     const p = P();
-    if (window.Android && Android.speak) {
-      try { Android.speak(text, p.pitch, p.rate); } catch (e) {}
+    if (window.Android && Android.speakLang) {
+      try { Android.speakLang(text, p.pitch, p.rate, p.lang); } catch (e) {}
       return;
     }
     if (!("speechSynthesis" in window)) { toast("Is browser mein voice engine nahi hai"); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.rate = p.rate;
     u.pitch = p.pitch;
-    const v = pickVoice();
+    u.lang = p.lang;
+    const v = pickVoice(p.lang);
     if (v) u.voice = v;
     speechSynthesis.resume();
     speechSynthesis.speak(u);
@@ -911,6 +940,9 @@
     if ((m = raw.match(/^morse\s+(.+)$/i))) return `Morse: ${toMorse(m[1])}`;
 
     if ((m = raw.match(/^(?:ask|ai)\s+(.+)$/i))) { aiPending(m[1]); return null; }
+    if (D.persona === "ultron" && !/^(mode|switch to|be|become|help)\b/.test(t)) {
+      return ULTRON_REFUSALS[Math.floor(Math.random() * ULTRON_REFUSALS.length)];
+    }
     if ((m = t.match(/^(?:mode|switch to|be|become)\s+(friday|jarvis|edith|dume|dum-e|ultron|u)$/))) {
       setPersona(m[1] === "dum-e" ? "dume" : m[1] === "u" ? "ultron" : m[1]);
       return null;
@@ -987,6 +1019,8 @@
       return "Ye app ya module nahi mila. App ka naam bolein, jaise 'open chrome'.";
     }
 
+    if ((m = t.match(/^focus (on|off)$/))) { D.focus = m[1] === "on"; save(); if (SHEET === "more") renderSheet(); return `Focus mode ${D.focus ? "on" : "off"}, sir.`; }
+    if (/^lock$/.test(t)) { showGate(); return "Lock ho gaya, sir. Scan karke kholiye."; }
     if ((m = t.match(/^voice (on|off)$/))) { D.voice = m[1] === "on"; save(); return `Voice ${D.voice ? "on" : "off"} ki gayi, sir.`; }
     if (/\b(joke|mazaak)\b/.test(t)) return JOKES[Math.floor(Math.random() * JOKES.length)];
     if (/\b(motivat|himmat|inspire)\b/.test(t)) return "Sir, progress roz thodi-thodi hoti hai. Aaj ka ek kaam poora karein.";
@@ -1220,7 +1254,7 @@
     const body = $("sheet-body");
     body.innerHTML = "";
     SHEETS[SHEET].render(body);
-    if (SHEET === "more") { appendCustomize(body); appendApi(body); appendBundled(body); appendNative(body); const tb = body.querySelector("#m-test"); if (tb) tb.addEventListener("click", testVoice); }
+    if (SHEET === "more") { appendCustomize(body); appendApi(body); appendBundled(body); appendNative(body); appendSecurity(body); const tb = body.querySelector("#m-test"); if (tb) tb.addEventListener("click", testVoice); }
   }
 
   function renderNotes(body) {
@@ -1395,12 +1429,7 @@
     body.querySelectorAll("[data-persona]").forEach(b => b.addEventListener("click", () => setPersona(b.dataset.persona)));
     body.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openSheet(b.dataset.open)));
     body.querySelector("#m-voice").addEventListener("click", () => { D.voice = !D.voice; save(); renderSheet(); });
-    body.querySelector("#m-export").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(D, null, 2)], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = "stark-data.json"; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    });
+    body.querySelector("#m-export").addEventListener("click", exportBackup);
     body.querySelector("#m-import").addEventListener("change", e => {
       const file = e.target.files[0];
       if (!file) return;
@@ -1411,6 +1440,7 @@
       }).catch(() => toast("Ye file sahi JSON nahi hai"));
     });
     body.querySelector("#m-reset").addEventListener("click", () => {
+      if (confirm("Reset se pehle backup le lein?")) exportBackup();
       if (!confirm("Sara data delete ho jaayega. Pakka?")) return;
       D = structuredClone(DEF); save(); applyPersona(); renderSheet(); toast("Data reset ho gaya");
     });
@@ -1531,6 +1561,7 @@
     paintHomeClock();
 
     checkRepeats(now);
+    checkBattery();
     let changed = false;
     D.reminders.forEach(r => {
       if (!r.done && r.dueAt <= now) {
@@ -2005,7 +2036,7 @@
       const c = $("live-card");
       if (c.classList.contains("call")) c.classList.remove("show");
     } else if (ev.type === "notif") {
-      showLive("notif", String(ev.app || "NOTIFICATION").toUpperCase(), ev.title || "", ev.text || "");
+      if (!D.focus) showLive("notif", String(ev.app || "NOTIFICATION").toUpperCase(), ev.title || "", ev.text || "");
       D.notifs.unshift({ title: ev.title || ev.app || "Notification", body: ev.text || "", target: "notifs", t: Date.now() });
       D.notifs = D.notifs.slice(0, 30);
       save();
@@ -2044,6 +2075,263 @@
     body.appendChild(sec);
   }
 
+
+  // ==================== PERSONA VOICE LANGUAGE (native speech) ====================
+  // (speak() above sends the persona's language code to the Android TTS engine)
+
+  // ==================== EYE GATE (front camera, face-api.js) ====================
+  const FACE_CDN = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js";
+  const FACE_MODELS = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model";
+  let gateStream = null, faceReady = null, gateTimer = null, gateLastUnlock = 0, gateBusy = false;
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = res;
+      s.onerror = () => rej(new Error("script"));
+      document.head.appendChild(s);
+    });
+  }
+  function loadFace() {
+    if (!faceReady) {
+      faceReady = (async () => {
+        if (!window.faceapi) await loadScript(FACE_CDN);
+        await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS);
+      })().catch(err => { faceReady = null; throw err; });
+    }
+    return faceReady;
+  }
+  function gateSet(title, msg) { $("gate-title").textContent = title; $("gate-msg").textContent = msg; }
+  function eyeEnrolled() { return !!(D.eye && D.eye.list && D.eye.list.length); }
+  function dist(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2; return Math.sqrt(s); }
+  function earOf(pts) {
+    const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    return (d(pts[1], pts[5]) + d(pts[2], pts[4])) / (2 * d(pts[0], pts[3]));
+  }
+  async function startGateCam() {
+    if (gateStream) return;
+    gateStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    const v = $("gate-video");
+    v.srcObject = gateStream;
+    v.muted = true;
+    await v.play();
+  }
+  function stopGateCam() {
+    if (gateStream) { gateStream.getTracks().forEach(t => t.stop()); gateStream = null; }
+    const v = $("gate-video");
+    if (v) v.srcObject = null;
+  }
+  async function faceNow() {
+    const v = $("gate-video");
+    if (!v.videoWidth) return null;
+    return faceapi.detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+      .withFaceLandmarks().withFaceDescriptor();
+  }
+  function showGate() {
+    const g = $("gate");
+    if (!g.classList.contains("hidden")) return;
+    g.classList.remove("hidden");
+    $("gate-pin").style.display = "none";
+    gateSet(eyeEnrolled() ? "SCAN KIJIYE" : "PEHLI BAAR SETUP", "Face model load ho raha hai...");
+    startGateFlow().catch(() => {
+      gateSet("CAMERA NAHI MILA", "Camera allow kijiye ya PIN use kijiye.");
+      $("gate-pin").style.display = "flex";
+    });
+  }
+  async function startGateFlow() {
+    await loadFace();
+    await startGateCam();
+    if (!eyeEnrolled()) return enrollEye();
+    return verifyEye();
+  }
+  async function enrollEye() {
+    gateSet("PEHLI BAAR SETUP", "Camera ki taraf dekhiye. Chehra 5 baar register hoga.");
+    const list = [];
+    let tries = 0;
+    while (list.length < 5 && tries < 90) {
+      tries++;
+      const det = await faceNow();
+      if (det) list.push(Array.from(det.descriptor));
+      await new Promise(r => setTimeout(r, 400));
+    }
+    if (list.length < 5) {
+      gateSet("CHEHRA NAHI MILA", "Roshni badhaiye aur chehra seedha rakhiye.");
+      return setTimeout(enrollEye, 1500);
+    }
+    D.eye = { list, created: Date.now() };
+    save();
+    gateSet("SETUP HO GAYA", "Ab har baar scan hoga.");
+    setTimeout(unlockGate, 900);
+  }
+  function verifyEye() {
+    gateSet("SCAN KIJIYE", "Camera mein dekhiye, phir aankh jhapkayein.");
+    let blinked = false, closed = false, attempts = 0;
+    gateTimer = setInterval(async () => {
+      if (gateBusy) return;
+      gateBusy = true;
+      try {
+        attempts++;
+        if (attempts > 70) {
+          clearInterval(gateTimer);
+          gateSet("SCAN FAIL", "PIN se kholiye.");
+          $("gate-pin").style.display = "flex";
+          return;
+        }
+        const det = await faceNow();
+        if (!det) { gateSet("SCAN KIJIYE", "Chehra dikhaiye..."); return; }
+        const e = (earOf(det.landmarks.getLeftEye()) + earOf(det.landmarks.getRightEye())) / 2;
+        if (e < 0.21) closed = true;
+        if (closed && e > 0.25) blinked = true;
+        const best = Math.min(...D.eye.list.map(s => dist(s, det.descriptor)));
+        if (best < 0.5 && blinked) {
+          clearInterval(gateTimer);
+          gateSet("PEHCHAAN HO GAYI", "Welcome back, sir.");
+          setTimeout(unlockGate, 500);
+        } else if (best < 0.5) {
+          gateSet("SCAN KIJIYE", "Ab aankh jhapkayein.");
+        } else {
+          gateSet("PEHCHAAN NAHI HUI", "Ye chehra register nahi hai.");
+        }
+      } catch (err) {
+        gateSet("SCAN ERROR", "Dobara try ho raha hai...");
+      } finally {
+        gateBusy = false;
+      }
+    }, 350);
+  }
+  function unlockGate() {
+    clearInterval(gateTimer);
+    stopGateCam();
+    $("gate").classList.add("hidden");
+    gateLastUnlock = Date.now();
+    if (D.autoBrief) say(briefing());
+  }
+  async function pinHash(p) {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(p));
+    return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, "0")).join("");
+  }
+  $("gate-pin-btn").addEventListener("click", () => {
+    const box = $("gate-pin");
+    box.style.display = box.style.display === "flex" ? "none" : "flex";
+  });
+  $("gate-pin-ok").addEventListener("click", async () => {
+    const pin = $("gate-pin-in").value.trim();
+    if (!pin) return toast("PIN likhiye, sir");
+    const h = await pinHash(pin);
+    if (!D.pinHash) {
+      D.pinHash = h;
+      save();
+      toast("PIN set ho gaya");
+      $("gate-pin-in").value = "";
+      return unlockGate();
+    }
+    if (h === D.pinHash) { $("gate-pin-in").value = ""; return unlockGate(); }
+    toast("PIN galat hai");
+  });
+  window.onLauncherResume = () => {
+    if (Date.now() - gateLastUnlock > 30000) showGate();
+  };
+
+  // ==================== BACKUP (any file type, native save) ====================
+  function saveFile(name, mime, text) {
+    if (window.Android && Android.saveFile) {
+      const b64 = btoa(unescape(encodeURIComponent(text)));
+      toast(Android.saveFile(name, mime, b64));
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }
+  function exportBackup() {
+    const data = Object.assign({}, D);
+    delete data.eye;
+    delete data.pinHash;
+    saveFile(`friday-backup-${today()}.json`, "application/json", JSON.stringify(data, null, 2));
+  }
+  function exportNotesTxt() {
+    saveFile(`friday-notes-${today()}.txt`, "text/plain", D.notes.join("\n\n") || "(no notes)");
+  }
+  function exportExpensesCsv() {
+    const q = s => `"${String(s).replace(/"/g, '""')}"`;
+    const rows = ["date,amount,note"].concat(D.expenses.map(e => `${e.d},${e.amt},${q(e.note)}`));
+    saveFile(`friday-expenses-${today()}.csv`, "text/csv", rows.join("\n"));
+  }
+  function exportSummaryTxt() {
+    const lines = [
+      `FRIDAY backup ${today()}`,
+      `Notes: ${D.notes.length}`,
+      `Tasks: ${D.tasks.length}`,
+      `Reminders: ${D.reminders.length}`,
+      `Habits: ${Object.keys(D.habits).length}`,
+      `Expenses: ${D.expenses.length}`,
+      `Journal: ${D.journal.length}`,
+      `Bookmarks: ${D.bookmarks.length}`
+    ];
+    saveFile(`friday-summary-${today()}.txt`, "text/plain", lines.join("\n"));
+  }
+
+  // ==================== SECURITY AND SETTINGS SECTION (MORE) ====================
+  function appendSecurity(body) {
+    const sec = document.createElement("div");
+    sec.style.cssText = "display:flex;flex-direction:column;gap:10px";
+    sec.innerHTML = `
+      <div class="small">SECURITY</div>
+      <div class="row center">
+        <button class="btn amber" id="s-rescan">RE-SCAN EYE</button>
+        <button class="btn" id="s-lock">LOCK NOW</button>
+      </div>
+      <div class="row"><input id="s-pin" type="password" inputmode="numeric" placeholder="New PIN"><button class="btn amber" id="s-pin-set">SET PIN</button></div>
+      <div class="row center">
+        <button class="btn${D.focus ? " on" : ""}" id="s-focus">FOCUS ${D.focus ? "ON" : "OFF"}</button>
+        <button class="btn${D.autoBrief ? " on" : ""}" id="s-brief">UNLOCK BRIEFING ${D.autoBrief ? "ON" : "OFF"}</button>
+      </div>
+      <div class="small">BACKUP (file format chunein)</div>
+      <div class="row center">
+        <button class="btn" id="b-json">FULL JSON</button>
+        <button class="btn" id="b-notes">NOTES TXT</button>
+        <button class="btn" id="b-csv">EXPENSES CSV</button>
+        <button class="btn" id="b-sum">SUMMARY TXT</button>
+      </div>
+      <div class="small">Backup mein eye aur PIN data shamil nahi hota. Import ke baad eye dobara scan hoga.</div>`;
+    sec.querySelector("#s-rescan").addEventListener("click", () => { D.eye = null; save(); showGate(); });
+    sec.querySelector("#s-lock").addEventListener("click", showGate);
+    sec.querySelector("#s-pin-set").addEventListener("click", async () => {
+      const p = sec.querySelector("#s-pin").value.trim();
+      if (p.length < 4) return toast("PIN kam se kam 4 digit ka");
+      D.pinHash = await pinHash(p);
+      save();
+      toast("PIN save ho gaya");
+    });
+    sec.querySelector("#s-focus").addEventListener("click", () => { D.focus = !D.focus; save(); renderSheet(); });
+    sec.querySelector("#s-brief").addEventListener("click", () => { D.autoBrief = !D.autoBrief; save(); renderSheet(); });
+    sec.querySelector("#b-json").addEventListener("click", exportBackup);
+    sec.querySelector("#b-notes").addEventListener("click", exportNotesTxt);
+    sec.querySelector("#b-csv").addEventListener("click", exportExpensesCsv);
+    sec.querySelector("#b-sum").addEventListener("click", exportSummaryTxt);
+    body.appendChild(sec);
+  }
+
+  // ==================== BATTERY ALERT ====================
+  let batAlerted = false;
+  function checkBattery() {
+    if (SYS.bat == null) return;
+    if (SYS.bat <= 15 && !SYS.charging) {
+      if (!batAlerted) {
+        batAlerted = true;
+        speak(`Sir, battery ${SYS.bat} percent hai. Charger laga dijiye.`);
+        toast(`Battery ${SYS.bat}%`);
+      }
+    } else if (SYS.bat > 20) {
+      batAlerted = false;
+    }
+  }
+
   // ==================== INIT ====================
   const nat = nativeApps();
   if (nat) APPS = nat;
@@ -2057,8 +2345,9 @@
   showPage(D.page === "hud" ? "hud" : "home");
   tick();
   setInterval(tick, 1000);
-  setTimeout(() => $("boot").classList.add("done"), 1800);
+  setTimeout(() => $("boot").classList.add("done"), 900);
   setInterval(pollMedia, 4000);
+  showGate();
   if (!D.chat.length) say(P().greet(greetWord()));
 </script>
 <script>

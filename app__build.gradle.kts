@@ -11,8 +11,8 @@ android {
         applicationId = "com.friday.launcher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "4.0"
     }
 
     buildTypes {
