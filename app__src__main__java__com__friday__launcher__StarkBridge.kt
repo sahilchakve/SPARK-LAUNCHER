@@ -64,6 +64,7 @@ class StarkBridge(private val context: Context, private val host: Host) {
 
     private val pm = context.packageManager
     private val iconCache = HashMap<String, String>()
+    private val pngCache = HashMap<String, ByteArray>()
 
     // Live sensor cache (updated by listeners, read by getDeviceInfo)
     private val accel = FloatArray(3)
@@ -169,7 +170,6 @@ class StarkBridge(private val context: Context, private val host: Host) {
             obj.put("cat", "Apps")
             obj.put("action", "native")
             obj.put("native", true)
-            obj.put("icon", iconData(pkg, ri))
             result.put(obj)
         }
         return result.toString()
@@ -588,6 +588,25 @@ class StarkBridge(private val context: Context, private val host: Host) {
             else -> Settings.ACTION_SETTINGS
         }
         context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** PNG bytes of an app icon, served to the WebView at /icon/<package> (cached). */
+    fun iconPng(pkg: String): ByteArray? {
+        pngCache[pkg]?.let { return it }
+        return try {
+            val d = pm.getApplicationIcon(pkg)
+            val size = 96
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            d.setBounds(0, 0, size, size)
+            d.draw(Canvas(bmp))
+            val out = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+            val bytes = out.toByteArray()
+            pngCache[pkg] = bytes
+            bytes
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun readText(path: String): String? = try {

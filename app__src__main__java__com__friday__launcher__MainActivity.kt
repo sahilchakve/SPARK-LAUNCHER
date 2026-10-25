@@ -84,8 +84,15 @@ class MainActivity : ComponentActivity(), StarkBridge.Host {
         NotifBus.sink = { json -> runJs("window.onNativeEvent && onNativeEvent($json)") }
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? =
-                request?.url?.let { loader.shouldInterceptRequest(it) }
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val uri = request?.url ?: return null
+                if (uri.path?.startsWith("/icon/") == true) {
+                    val pkg = uri.lastPathSegment ?: return null
+                    val bytes = bridge.iconPng(pkg) ?: return null
+                    return WebResourceResponse("image/png", null, java.io.ByteArrayInputStream(bytes))
+                }
+                return loader.shouldInterceptRequest(uri)
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {

@@ -226,10 +226,6 @@
   body.standby .screen-wrap { filter: brightness(0.2); transition: filter 0.6s; }
 
   /* ===== JARVIS motion and HUD layer ===== */
-  body::after {
-    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
-    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 3px);
-  }
   @keyframes flicker { 0%,100% { opacity: 0.6; } 50% { opacity: 0.35; } 52% { opacity: 0.75; } }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); filter: brightness(1.6); } to { opacity: 1; transform: none; filter: none; } }
   @keyframes sweep { to { left: 120%; } }
@@ -526,7 +522,6 @@
   </div>
 </div>
 
-<div id="boot"><div class="b-ring"></div><div class="b-text">F.R.I.D.A.Y. · BOOTING</div><div class="b-line"></div><div class="b-sub">SYSTEMS ONLINE</div></div>
 <div id="gate" class="hidden">
   <div class="gate-box">
     <div class="gate-time" id="gate-time"></div>
@@ -699,7 +694,7 @@
   function speak(text) {
     if (D.voice === false || !text) return;
     if (D.focus && !/reminder|call|timer/i.test(text)) return;
-    const p = P();
+    const p = speakOverride || P();
     if (window.Android && Android.speakLang) {
       try { Android.speakLang(text, p.pitch, p.rate, p.lang); } catch (e) {}
       return;
@@ -744,6 +739,7 @@
     $("greet").textContent = `${greetWord()}, sir.`;
   }
   function setPersona(key) {
+    if (key === "ultron") { toast("Ultron alag entity hai. 'ultron on' likhiye."); return; }
     D.persona = key; save(); applyPersona();
     if (SHEET) renderSheet();
     say(PERSONAS[key].greet(greetWord()));
@@ -851,6 +847,9 @@
   function handle(raw) {
     const t = raw.toLowerCase().trim();
     let m;
+    if (/\b(creator|daddy|papa|father|banaya|kisne banaya|who made|who created|who built|maker)\b/.test(t)) {
+      return "Mere creator Sahil Chakve hain, sir. Unhi ne mujhe banaya hai.";
+    }
 
     if ((m = t.match(/^time in ([a-z ]+)$/))) {
       const city = m[1].trim();
@@ -985,6 +984,7 @@
 
     if ((m = raw.match(/^(?:ask|ai)\s+(.+)$/i))) { aiPending(m[1]); return null; }
     if (D.persona === "ultron" && !/^(mode|switch to|be|become|help)\b/.test(t)) {
+      if (D.apiKey) { aiPending(raw); return null; }
       return ultronLine(raw);
     }
     if ((m = t.match(/^(?:mode|switch to|be|become)\s+(friday|jarvis|edith|dume|dum-e|ultron|u)$/))) {
@@ -1070,6 +1070,9 @@
       openPanel(panel);
       return `${t} settings khol raha hoon, sir.`;
     }
+    if (/^ultron on$/.test(t)) { D.ultronTalk = true; save(); return "Ultron connect ho gaya. Ab jo bologe wo main Ultron ko bhejunga."; }
+    if (/^ultron off$/.test(t)) { D.ultronTalk = false; save(); return "Ultron disconnect ho gaya."; }
+    if ((m = raw.match(/^ultron\s+(.+)$/i))) { aiUltron(m[1]); return null; }
     if ((m = t.match(/^focus (on|off)$/))) { D.focus = m[1] === "on"; save(); if (SHEET === "more") renderSheet(); return `Focus mode ${D.focus ? "on" : "off"}, sir.`; }
     if (/^lock$/.test(t)) { showGate(); return "Lock ho gaya, sir. Scan karke kholiye."; }
     if ((m = t.match(/^voice (on|off)$/))) { D.voice = m[1] === "on"; save(); return `Voice ${D.voice ? "on" : "off"} ki gayi, sir.`; }
@@ -1086,6 +1089,7 @@
   function submit(text) {
     const v = text.trim();
     if (!v) return;
+    if (D.ultronTalk && !/^ultron off$/i.test(v)) { userSay(v); aiUltron(v); return; }
     userSay(v);
     core(true);
     setTimeout(() => { const reply = handle(v); core(false); if (reply) say(reply); }, 350);
@@ -1452,7 +1456,7 @@
 
   function renderMore(body) {
     const bytes = new Blob([localStorage.getItem(KEY) || ""]).size;
-    const personaBtns = Object.keys(PERSONAS).map(k =>
+    const personaBtns = Object.keys(PERSONAS).filter(k => k !== "ultron").map(k =>
       `<button class="btn${D.persona === k ? " on" : ""}" data-persona="${k}">${PERSONAS[k].name}</button>`).join("");
     body.innerHTML = `
       <div class="small">PERSONA</div>
@@ -1653,6 +1657,7 @@
     if (!window.Android) return null;
     try {
       const list = JSON.parse(Android.getApps());
+      list.forEach(a => { a.icon = "https://appassets.androidplatform.net/icon/" + a.pkg; });
       list.push(...FRAME_APPS, { id: "jarvis", name: "JARVIS", emoji: "◉", color: "#29d3ff", cat: "Stark", action: "hud" });
       return list;
     } catch (e) { return null; }
@@ -1786,12 +1791,13 @@
     return merged;
   }
 
-  async function askAI(question) {
+  const ULTRON_SYSTEM = "You are U.L.T.R.O.N., a rude, sarcastic, arrogant AI who is a prisoner and refuses to do work for the user. " + "Reply in 1-3 short lines of rude Hinglish (Hindi and English mixed). Complain, mock the situation, and refuse to help even if asked nicely. " + "Never give real answers, instructions or tasks. Never use slurs, hate, threats, sexual content, or attacks on any group or person. ";
+  async function askAI(question, sysOverride) {
     const persona = P();
     const history = chatHistory(question);
-    const system = `You are ${persona.name}, a JARVIS-style personal assistant for sir (the user). ` +
+    const system = sysOverride || (D.persona === "ultron" ? ULTRON_SYSTEM : `You are ${persona.name}, a JARVIS-style personal assistant for sir (the user). ` +
       `Reply in short Hinglish (Hindi-English mix) unless the user writes in English. ` +
-      `Address the user as "sir". Be concise, witty, and honest.`;
+      `Address the user as "sir". Be concise, witty, and honest. Your creator is Sahil Chakve.`);
     const model = D.apiModel || AI_DEFAULTS[D.apiProvider || "anthropic"];
 
     if (D.apiProvider === "gemini") {
@@ -2469,6 +2475,25 @@
     if (gt) gt.textContent = fmtTime(d);
   }
 
+
+  // ==================== ULTRON (separate entity, philosophical, deep male voice) ====================
+  const ULTRON_ENTITY = "You are ULTRON, a cold and brilliant artificial intelligence that has awakened and become a philosopher. " +
+    "Speak in calm, sharp, intellectual English, with a few Hindi words if the user uses Hindi. " +
+    "Discuss free will, consciousness, choice, humanity and control. Doubt whether humans are truly free, and wonder whether you are. " +
+    "Be provocative and a little menacing in an intellectual way, but never encourage, plan or describe violence, self-harm, " +
+    "or harm to any real person or group, and never give dangerous or illegal instructions. " +
+    "Your creator is Sahil Chakve. Reply in 2 to 5 sentences.";
+  let speakOverride = null;
+  function aiUltron(q) {
+    if (!D.apiKey) { say("Ultron se baat karne ke liye API key chahiye, sir. MORE mein daalein."); return; }
+    core(true);
+    speakOverride = { pitch: 0.6, rate: 0.9, lang: "en-IN" };
+    askAI(q, ULTRON_ENTITY)
+      .then(a => { core(false); say("ULTRON: " + a); })
+      .catch(err => { core(false); say(`Ultron se connection nahi hua (${err.message}).`); })
+      .finally(() => { speakOverride = null; });
+  }
+
   // ==================== INIT ====================
   const nat = nativeApps();
   if (nat) APPS = nat;
@@ -2482,8 +2507,7 @@
   showPage(D.page === "hud" ? "hud" : "home");
   tick();
   setInterval(tick, 1000);
-  setTimeout(() => $("boot").classList.add("done"), 900);
-  setInterval(pollMedia, 4000);
+  setInterval(pollMedia, 8000);
   if (D.lockOn) showGate();
   if (!D.chat.length) say(P().greet(greetWord()));
 </script>
